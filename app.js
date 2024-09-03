@@ -49,15 +49,15 @@ scene.add(dirLight.target)
 
 window.heightMap = []
 window.moistureMap = []
-window.lenx = 600
-window.leny = 600
+window.lenx = 300 // quality of plane (technically zooms it)
+window.leny = 300 // quality of plane
 
 // window. makes a global, needed for the noise filler functions
 window.noiseLevel = 1.8 // lower for more oceans
 window.noiseMulti = 100; // doesnt affect it
 window.noiseScale = 0.003; // bigger makes more detailed/chaotic 0.08
-window.gridW = 100;
-window.gridH = 100;
+window.gridW = 100; // size of plane
+window.gridH = 100; // size of plane
 window.noiseCurve = 2.6; // makes higher highs and lower lows 2.3
 
 let waterLevel = 2.7 // sets the hieght of the water plane.
@@ -283,6 +283,16 @@ function interp(val, min, max, newMin, newMax){
   }
 
 function getPixel(x,y){
+
+    y = y<0 ? 0 : y
+    x = x<0 ? 0 : x
+    y = y>99 ? 99 : y
+    x = x>99 ? 99 : x
+
+    if (x>100 || x<0 || y < 0 || y>100){
+        console.log(x,y)
+    }
+
     let idxR = 4*(x + y*100)
 
     // DEBUGGING, shows clipping
@@ -295,12 +305,6 @@ function getPixel(x,y){
         }
     }
 
-    // if (idxR < 0){ // snowy mountains?
-    //     return [255,255,255]
-    // }
-
-    idxR = idxR < 0 ? 0 : idxR
-    idxR = idxR > 40000 ? 40000-4 : idxR
     
     let idxG = idxR+1
     let idxB = idxR+2
