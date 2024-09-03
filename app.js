@@ -2,11 +2,15 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Stats from 'three/addons/libs/stats.module.js'
 
+// want to make 2 more canvases and display the noise for height and moisture
+
+
+
+
+
 //globals
 let stats, controls, renderer, camera, scene
 var UVmap;
-
-// may want to manip that later
 
 function setup() {
    
@@ -49,9 +53,9 @@ window.lenx = 600
 window.leny = 600
 
 // window. makes a global, needed for the noise filler functions
-window.noiseLevel = 5 // lower for more oceans
+window.noiseLevel = 1.8 // lower for more oceans
 window.noiseMulti = 100; // doesnt affect it
-window.noiseScale = 0.01; // bigger makes more detailed/chaotic 0.08
+window.noiseScale = 0.003; // bigger makes more detailed/chaotic 0.08
 window.gridW = 100;
 window.gridH = 100;
 window.noiseCurve = 2.6; // makes higher highs and lower lows 2.3
@@ -78,13 +82,17 @@ camera.position.y = 35
 // CREATE RECTS
 const pw = gridW
 const ph = gridH
-const wsegs = lenx
-const hsegs = leny
+const wsegs = lenx-1 // I FUCKING FIXED IT I LOOKED FOR LIKE A WHOLE DAY
+const hsegs = leny-1 // AND IT WAS CUZ I DIDNT PUT -1 👹👹👹
 const planeGeo = new THREE.PlaneGeometry(pw, ph, wsegs, hsegs);
 
 // displace the vertices based on height data
 const colors = []
 
+
+
+planeGeo.attributes.position.count == lenx*leny // FALSE
+console.log(planeGeo.attributes.position.count, lenx*leny)
 for (let i = 0; i < planeGeo.attributes.position.count; i++) {
    
     const vertex = new THREE.Vector3()
@@ -107,12 +115,12 @@ for (let i = 0; i < planeGeo.attributes.position.count; i++) {
 
 planeGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3))
 
-planeGeo.computeVertexNormals()
 planeGeo.attributes.position.needsUpdate = true;
+planeGeo.computeVertexNormals()
 
 const planeMat = new THREE.MeshLambertMaterial({
-    vertexColors: true
-    // side: THREE.DoubleSide // renders both sides
+    vertexColors: true,
+    side: THREE.DoubleSide // renders both sides, could avoid for more performance
 })
 const wholeMap = new THREE.Mesh(planeGeo, planeMat)
 
@@ -146,6 +154,59 @@ scene.add(water)
 // END RECTS
 
 
+// DRAW THE NOISE FUNCTIONS TO THE ADDITIONAL CANVASES
+// put under an if(debug) cond if neccesary
+
+// create canvas 1
+const canv1 = document.createElement('canvas');
+canv1.width = lenx
+canv1.height = leny
+document.body.appendChild(canv1)
+const ctx1 = canv1.getContext('2d');
+
+// create canvas 2
+const canv2 = document.createElement('canvas');
+canv2.width = lenx
+canv2.height = leny
+document.body.appendChild(canv2)
+const ctx2 = canv2.getContext('2d');
+
+// set Image Data on canvas 1 to heightmap
+const imgData1 = ctx1.createImageData(lenx,leny);
+
+for (let y=0; y < leny; y++){
+    for (let x=0; x < lenx; x++){
+        const index = (x+y*lenx)
+        const value = interp(heightMap[index], 0,16,0,1)
+        const pixelIndex = index*4
+        const color = new THREE.Color().setHSL(0.325, 0.5, value)
+
+        imgData1.data[pixelIndex] = color.r*255
+        imgData1.data[pixelIndex+1] = color.g*255
+        imgData1.data[pixelIndex+2] = color.b*255
+        imgData1.data[pixelIndex+3] = 255
+    }
+}
+ctx1.putImageData(imgData1, 0, 0)
+
+// set Image Data on canvas 2 to moistmap
+const imgData2 = ctx2.createImageData(lenx,leny);
+
+for (let y=0; y < leny; y++){
+    for (let x=0; x < lenx; x++){
+        const index = (x+y*lenx)
+        const value = interp(moistureMap[index], 0,16,0,1)
+        const pixelIndex = index*4
+        const color = new THREE.Color().setHSL(0.616, 0.5, value)
+
+        imgData2.data[pixelIndex] = color.r*255
+        imgData2.data[pixelIndex+1] = color.g*255
+        imgData2.data[pixelIndex+2] = color.b*255
+        imgData2.data[pixelIndex+3] = 255
+    }
+}
+ctx2.putImageData(imgData2, 0, 0)
+
 
 renderer.setAnimationLoop(loop);
 }
@@ -156,12 +217,14 @@ function fillHeightWithNoise(){
     let strength2 = 0.75
     let strength3 = 0.50 // i spelled that wrong
     let strength4 = 0.25
+
+    let offset = 0.01 // somehow fixes simplex
     for (let x = 0; x < lenx; x++) {
         for (let y = 0; y < leny; y++) {
-        let e = noiseLevel * noise.perlin2(x * noiseScale, y * noiseScale)+1 //+
-              //noiseLevel*strength2 * (noise.perlin2(x * noiseScale/strength2, y * noiseScale/strength2)+1) +
-              // noiseLevel*strength2 * (noise.perlin2(x * noiseScale/strength3, y * noiseScale/strength3)+1) +
-              // noiseLevel*strength4 * (noise.perlin2(x * noiseScale/strength4, y * noiseScale/strength4)+1);
+        let e = noiseLevel * noise.simplex2((x+offset) * noiseScale, (y+offset) * noiseScale)+1 +
+              noiseLevel*strength2 * (noise.simplex2((x+offset) * noiseScale/strength2, (y+offset) * noiseScale/strength2)+1) +
+              noiseLevel*strength2 * (noise.simplex2((x+offset) * noiseScale/strength3, (y+offset) * noiseScale/strength3)+1) +
+              noiseLevel*strength4 * (noise.simplex2((x+offset) * noiseScale/strength4, (y+offset) * noiseScale/strength4)+1);
           e = (e / (1 + strength2 + strength3 + strength4));
           e = Math.pow(e, noiseCurve)
           heightMap[x + y * lenx] = e
@@ -175,10 +238,10 @@ function fillMoistureWithNoise(){
     let strength4 = 0.25
     for (let x = 0; x < lenx; x++) {
         for (let y = 0; y < leny; y++) {
-            let e = noiseLevel * noise.perlin2(x * noiseScale, y * noiseScale) +
-                  noiseLevel*strength2 * (noise.perlin2(x * noiseScale/strength2, y * noiseScale/strength2)+1) +
-                  noiseLevel*strength2 * (noise.perlin2(x * noiseScale/strength3, y * noiseScale/strength3)+1) +
-                  noiseLevel*strength4 * (noise.perlin2(x * noiseScale/strength4, y * noiseScale/strength4)+1);
+            let e = noiseLevel * noise.simplex2(x * noiseScale, y * noiseScale) +
+                  noiseLevel*strength2 * (noise.simplex2(x * noiseScale/strength2, y * noiseScale/strength2)+1) +
+                  noiseLevel*strength2 * (noise.simplex2(x * noiseScale/strength3, y * noiseScale/strength3)+1) +
+                  noiseLevel*strength4 * (noise.simplex2(x * noiseScale/strength4, y * noiseScale/strength4)+1);
               e = (e / (1 + strength2 + strength3 + strength4));
               e = Math.pow(e, noiseCurve)
           moistureMap[x + y * lenx] = e
@@ -232,9 +295,9 @@ function getPixel(x,y){
         }
     }
 
-    if (idxR < 0){ // snowy mountains?
-        return [255,255,255]
-    }
+    // if (idxR < 0){ // snowy mountains?
+    //     return [255,255,255]
+    // }
 
     idxR = idxR < 0 ? 0 : idxR
     idxR = idxR > 40000 ? 40000-4 : idxR
