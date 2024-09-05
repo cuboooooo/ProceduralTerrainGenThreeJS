@@ -2,72 +2,113 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import Stats from 'three/addons/libs/stats.module.js'
 
-// to add:
-// moving (should only need to update (height+width) # of noise values, not too intensive. do NOT refresh the whole array, push and pop.)
-// ~~island bias? (make the borders water)~~ done in v3
-// climate? (poles are colder, mountaintops are colder)
-// tree placement? use higher frequency noise mixed with the moisture map
+
+// v5 plans:
+// // make UI elements for all variables, no need for live yet, just on the next refresh.
+// // // (or warn that for live variable editing, a lower resolution is needed)
+
+// // make it so that when you scale down the resolution, it still looks good. scale down to 200 to see what i mean.
+// // // (mostly has to do with noiseScale, islandBias, and noiseCurve)
+
+// // create many different CSS UV maps to choose from
+// // // strictly elevation, strictly humidity, etc.
+// // // like try turning the discrete one into a smooth by blurring it
+
+// // Elevation noise artifacts
+// // // If you turn up the noiseScale to like 0.01 theres all these funny little
+// // // islands. Its like the islandBias function ignores the like 8th octave or something funny
+
+// // Water plane calulation
+// // // the water plane height is currently hardcoded and it breaks when you change the noise level
+// // // i think if you reverse engineer the noise to uv function, you can find the height at which the 
+// // // UV starts sampling water, and you can just use that to figure out the height.
 
 
-// LIVE CUSTOMIZATION
-// // there are arbitrarily set customizible variables EVERYWHERE.
-// // lenx, noiseLevel, edgeClearence, islandBiasMix, just to name a few
-// // itd be cool to be able to change them from the webpage.
 
-// create many different CSS UV maps, like try turning the discrete one into a smooth by blurring it
+// Future plans:
+// // **LIVE** CUSTOMIZATION
+// // // instead of recalculating all values, you could find a way to keep 
+// // // a copy of the original noise? and then if you change the power you 
+// // // just redo the power function??? idk.
 
-//globals
+// // Moving terrain
+// // // (should only need to update (height+width) # of noise values, 
+// // // not too intensive. do NOT refresh the whole array, push and pop.)
+
+// // Climate? 
+// // // (poles are colder, mountaintops are colder) (requires a rectangular big map i feel like)
+
+// // Partial rendering
+// // // Generate a MASSIVE map. HUGE. then render it to a 2d minimap, 
+// // // wherever you hover over, a 3d render of that part is displayed.
+
+// // Trees?
+// // // So many approaches to this, also depends on scale, difficult, but doable
+// // //  Higher frequency noise mixed with the moisture map
+
+// // Moving water??? (or physical)
+// // // So much more intensive but man would it be sick
+// // // Or just use a physical material and make it 
+// // // reflective and rough and whatnot. (thickness too for refraction)
+
+
+
+// // // // // // // // // // // //
+//       CUSTOM VARIABLES        //
+// // // // // // // // // // // //
+
 let stats, controls, renderer, camera, scene
 var UVmap;
 
-// CUSTOMISIBLE FUNCTIONS
-
+// DEBUG SWITCHES
 window.debugClipping = false
 window.debugNoiseFunctions = true // honestly just cool, i keep it on
 window.debugUVMap = true
 window.debugPlane = false
 
-window.UVwidth = 200 // change for more detailed UV values???
+// UV MAP VARIABLES
+window.UVwidth = 200 // change for more detailed UV values
 window.UVheight = 200
-window.discrete = false
-window.css = true
-// css uses css instead of an image
-// if css false, use 2 png UV maps
-// true is discrete biomes
-// false is smooth/gradient biomes
+window.discrete = false // discrete vs smooth biomes
+window.css = true // css vs png UVmap (css is just better though...)
+window.waterBumpVal = 0.4 // Forces the noise values into a wider range, 
+window.peakBumpVal = 1  // so that even if the noise never hits 1, it still draws some white peaks.
+                        // turn window.debugClipping = true to see its work.
+                        // or just edit the gradient now that its css 🤪
 
-window.lenx = 1200 // quality of plane (technically zooms it)
+// PLANE VARIABLES
+window.lenx = 1200 // quality of plane
 window.leny = 1200 // quality of plane
-window.canvasW = 400 // size of browser canvas
-window.canvasH = 400 // size of browser canvas
+window.gridW = 100; // size of plane in world (doesnt really change anything if you do...)
+window.gridH = 100; // size of plane in world (mostly just flattens it, which kinda looks nice tbh) 
+window.waterPlaneLevel = 20*0.252// sets the hieght of the water plane.
 
-// window. makes a global, needed for the noise filler functions
+// CANVAS ELEMENT VARIABLES
+window.canvasW = 400 // size of canvas element
+window.canvasH = 400 // size of canvas element
+
+// NOISE VARIABLES
 window.noiseLevel = 20 // how much to draw out the 0-1 values in 3d
-window.noiseScale = 0.003; // bigger makes more detailed/chaotic 0.08
-window.gridW = 100; // size of plane in world
-window.gridH = 100; // size of plane in world
+window.noiseScale = 0.003; // bigger values = more detailed/more map 
 
+// Strengths of the different octaves of noise
 window.strength1 = 1
 window.strength2 = 0.50
-window.strength3 = 0.25
-window.strength4 = 0.12
-window.strength5 = 0.06
-window.strength6 = 0.03
-window.noiseCurve = 2; // makes higher highs and lower lows 2.3
+window.strength4 = 0.25
+window.strength8 = 0.12
+window.strength16 = 0.06
+window.strength32 = 0.03
+window.noiseCurve = 2; // makes higher highs and lower lows 
 
-window.waterPlaneLevel = noiseLevel*0.252// sets the hieght of the water plane.
-// could be more precisely coded (not hardcoded)
-
-window.EuclideanSquared = true // else, SquareBump
+// ISLAND BIAS VARIABLES
 window.islandBias = true
+window.EuclideanSquared = true // else, SquareBump
 window.islandBiasMix = 0.5 // value for how much to emphasise the island bias. 0 is original, 1 is max.
 window.edgeClearance = 1.37 // 1 is regular, higher gives more water around edges
 
-window.waterBumpVal = 0.4 // what these do, is force the noise values into a wider range, 
-window.peakBumpVal = 1 // so that even if the noise never hits 1, it still draws some peaks.
-    // turn window.debugClipping = true to see its work.
-    // or just edit the gradient now that its css 🤪
 
+
+// loadImage() is called first, and setup() is called after that
 function setup() {
    
 scene = new THREE.Scene();
@@ -160,11 +201,11 @@ function fillHeightWithNoise(){
         for (let y = 0; y < leny; y++) {
         let e = strength1 * (noise.simplex2(x * noiseScale, y * noiseScale)+1)/2 + // noise func return [-1,1] and i need [0,1] so (noise+1)/2 😁
                 strength2 * (noise.simplex2(x * 2*noiseScale, y * 2*noiseScale)+1)/2 +
-                strength3 * (noise.simplex2(x * 4*noiseScale, y * 4*noiseScale)+1)/2 +
-                strength4 * (noise.simplex2(x * 8*noiseScale, y * 8*noiseScale)+1)/2 +
-                strength5 * (noise.simplex2(x * 16*noiseScale, y * 16*noiseScale)+1)/2 +
-                strength6 * (noise.simplex2(x * 32*noiseScale, y * 32*noiseScale)+1)/2;
-          e = (e / (strength1 + strength2 + strength3 + strength4 + strength5 + strength6));
+                strength4 * (noise.simplex2(x * 4*noiseScale, y * 4*noiseScale)+1)/2 +
+                strength8 * (noise.simplex2(x * 8*noiseScale, y * 8*noiseScale)+1)/2 +
+                strength16 * (noise.simplex2(x * 16*noiseScale, y * 16*noiseScale)+1)/2 +
+                strength32 * (noise.simplex2(x * 32*noiseScale, y * 32*noiseScale)+1)/2;
+          e = (e / (strength1 + strength2 + strength4 + strength8 + strength16 + strength32));
           e = Math.pow(e, noiseCurve)
          
           // mix declared in header
@@ -190,10 +231,7 @@ function fillMoistureWithNoise(){
     // these noise functions return [-1,1], so i need to +1 then /2
     // could copy from HeightMap filler, but i prefer big blobby biomes
     noise.seed(Math.random())
-    let strength1 = 1
-    let strength2 = 0.50
-    let strength3 = 0.25
-    let strength4 = 0.12
+
 
     for (let x = 0; x < lenx; x++) {
         for (let y = 0; y < leny; y++) {
@@ -501,12 +539,10 @@ function loadImage(){
             for (let i = css.length-1; i >= 0; i--){
             // for (let i = 0; i < css.length; i++) {
                 let grad = css[i]
-                console.log(grad)
                 // grad[0] is the angle
                 let angle = parseInt(grad[0].substring(0,grad[0].indexOf("deg"))) * (Math.PI/180)
                 let endX = Math.round(UVCanvas.width * Math.sin(angle), 3)
                 let endY = Math.round(UVCanvas.height * Math.cos(angle), 3)
-                console.log(endX, endY)
                 let gradient = ctx.createLinearGradient(0,endY,endX,0)
 
                 // for(let j = 1; j < grad.length; j++){ // parse through color stops
@@ -514,7 +550,6 @@ function loadImage(){
                     grad[j] = grad[j].substring(1)
                     let percent =parseInt(grad[j].substring(10,grad[j].length-1))/100;
                     let color = grad[j].substring(0,9);
-                    console.log(color, percent)
                     gradient.addColorStop(percent, color);
                 }
                 ctx.fillStyle = gradient
