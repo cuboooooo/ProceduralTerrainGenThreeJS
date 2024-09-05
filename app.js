@@ -14,7 +14,7 @@ import Stats from 'three/addons/libs/stats.module.js'
 // // lenx, noiseLevel, edgeClearence, islandBiasMix, just to name a few
 // // itd be cool to be able to change them from the webpage.
 
-
+// create a css discrete version
 
 
 //globals
@@ -22,6 +22,10 @@ let stats, controls, renderer, camera, scene
 var UVmap;
 
 window.discrete = true
+window.css = true
+// css uses css instead of an image
+
+// if css false, use 2 png UV maps
 // true is discrete biomes
 // false is smooth/gradient biomes
 
@@ -72,7 +76,7 @@ window.gridW = 100; // size of plane
 window.gridH = 100; // size of plane
 window.noiseCurve = 2; // makes higher highs and lower lows 2.3
 
-let waterPlaneLevel = noiseLevel*0.21// sets the hieght of the water plane.
+let waterPlaneLevel = noiseLevel*0.252// sets the hieght of the water plane.
 // waterLevel COULD be calculated if I make the UV interp functions with variables
 window.debugClipping = false
 
@@ -194,21 +198,21 @@ function getPixel(x,y){
 
     // DEBUGGING, shows clipping
     if(debugClipping){
-        idxR = 4*(x + y*100)
+        idxR = 4*(x + y*UVCanvas.height)
 
         if (idxR < 0){
             return [255,0,0]
         }
-        if (idxR > 40000){
+        if (idxR > UVCanvas.height*UVCanvas.width*4){
             return [0,255,0]
         }
     } else {
         y = y<0 ? 0 : y
         x = x<0 ? 0 : x
-        y = y>99 ? 99 : y
-        x = x>99 ? 99 : x
+        y = y>UVCanvas.height-1 ? UVCanvas.height-1 : y
+        x = x>UVCanvas.width-1 ? UVCanvas.width-1 : x
 
-        idxR = 4*(x + y*100)
+        idxR = 4*(x + y*UVCanvas.height)
     }
 
     
@@ -256,12 +260,13 @@ function createAndDrawPlane(){
         planeGeo.attributes.position.setXYZ(i, vertex.x, vertex.y, vertex.z);
        
         //assign vertex color
-        let waterBumpVal = 40 // what these do, is force the noise values into a wider range, 
-        let peakBumpVal = 100 // so that even if the noise never hits 1, it still draws some peaks.
+        let waterBumpVal = 0.4 // what these do, is force the noise values into a wider range, 
+        let peakBumpVal = 1 // so that even if the noise never hits 1, it still draws some peaks.
                             // turn window.debugClipping = true to see its work.
-        let UVheight = Math.floor(interp(heightMap[i], 0, 1, 0-waterBumpVal, 100+peakBumpVal)) // 0-1 doesnt actaully hit 1 very often, meaning you dont get fun snowy mountain peaks.
-        let UVmoist = Math.floor(interp(moistMap[i], 0, 1, 0, 100))
-        let UVPixel = getPixel(100-UVmoist, 100-UVheight)
+                            // or just edit the gradient now that its css 🤪
+        let UVheight = Math.floor(interp(heightMap[i], 0, 1, 0-UVCanvas.width*waterBumpVal, UVCanvas.height+UVCanvas.height*peakBumpVal)) // 0-1 doesnt actaully hit 1 very often, meaning you dont get fun snowy mountain peaks.
+        let UVmoist = Math.floor(interp(moistMap[i], 0, 1, 0, UVCanvas.width))
+        let UVPixel = getPixel(UVCanvas.width-UVmoist, UVCanvas.height-UVheight)
         let r = interp(UVPixel[0], 0,255,0,1)
         let g = interp(UVPixel[1], 0,255,0,1)
         let b = interp(UVPixel[2], 0,255,0,1)
@@ -306,6 +311,13 @@ function createNoiseCanvases() {
         canv2.height = 200
         document.body.appendChild(canv2)
         const ctx2 = canv2.getContext('2d');
+
+
+        // DRAW UV CANVAS (yes i know this is in a weird place but its to preserve the page layout)
+        // hook up to a debug conditional 
+        if(window.css){
+        document.body.appendChild(UVCanvas)
+        }
 
         // set Image Data on canvas 1 to heightmap
         const imgData1 = ctx1.createImageData(canv1.width,canv1.height);
@@ -404,27 +416,78 @@ function loadImage(){
     const loader = new THREE.TextureLoader() 
     // biomeDiscrete.png for discrete biomes
     // biome.png for smooth/gradient biomes
-    let file
-    if (window.discrete) {file = "biomeDiscrete.png"}
-    else {file = "biome.png"}
-    loader.load(file, function(texture){
-        const image = texture.image;
-        const canvas = document.createElement('canvas')
-        canvas.width = image.width
-        canvas.height = image.height
+    if (!css){
+        let file
+        if (window.discrete) {file = "biomeDiscrete.png"}
+        else {file = "biome.png"}
+        loader.load(file, function(texture){
+            const image = texture.image;
+            window.UVCanvas = document.createElement('canvas')
+            UVCanvas.width = image.width
+            UVCanvas.height = image.height
 
-        const context = canvas.getContext('2d')
-        context.drawImage(image,0,0)
+            const context = UVCanvas.getContext('2d')
+            context.drawImage(image,0,0)
 
-        const imageData = context.getImageData(0,0,canvas.width,canvas.height)
+            const imageData = context.getImageData(0,0,UVCanvas.width,UVCanvas.height)
+            UVmap = imageData.data
+
+            setup()
+
+            
+        })
+    }
+    else { // use CSS
+        window.UVCanvas = document.createElement('canvas')
+        UVCanvas.width = 200 // change for more detailed UV values???
+        UVCanvas.height = 200
+        let ctx = UVCanvas.getContext('2d')
+
+        let css = `background-size: 100% 100%;
+                    background-position: 0px 0px,0px 0px,0px 0px;
+                    background-image: linear-gradient(0deg, #070041FF 0%, #00000000 20%, #5C7EFFFF 20%, #FFFFFF00 99%),linear-gradient(0deg, #0000008C 20%, #FFFFFF00 60%, #FFFFFFFF 95%),linear-gradient(90deg, #FFFBBDFF 20%, #007900FF 100%);`
+        // completely uneccesary parsing of CSS data so that I can keep using this tool https://colorgradient.dev/gradient-generator/
+        // I use a lot of hard stops (e.g. two colors at one percent stop to switch colors) and that breaks things.
+        // to fix this, lets say ur going black->blue->hardstop->white. order the colors like black -> hardstop ->blue ->white. just works
+        css = css.split('\n')[2] // background-image line
+        css = css.split("linear-gradient(")
+        css.shift()
+        for (let i = 0; i<css.length; i++){
+            css[i] = css[i].split(",")
+            if (i<css.length-1){
+                css[i].pop()
+            }
+        }
+        for (let i = css.length-1; i >= 0; i--){
+        // for (let i = 0; i < css.length; i++) {
+            let grad = css[i]
+            console.log(grad)
+            // grad[0] is the angle
+            let angle = parseInt(grad[0].substring(0,grad[0].indexOf("deg"))) * (Math.PI/180)
+            let endX = Math.round(UVCanvas.width * Math.sin(angle), 3)
+            let endY = Math.round(UVCanvas.height * Math.cos(angle), 3)
+            console.log(endX, endY)
+            let gradient = ctx.createLinearGradient(0,endY,endX,0)
+
+            // for(let j = 1; j < grad.length; j++){ // parse through color stops
+            for(let j = grad.length-1; j > 0; j--) {
+                grad[j] = grad[j].substring(1)
+                let percent =parseInt(grad[j].substring(10,grad[j].length-1))/100;
+                let color = grad[j].substring(0,9);
+                console.log(color, percent)
+                gradient.addColorStop(percent, color);
+            }
+            ctx.fillStyle = gradient
+            ctx.fillRect(0,0,UVCanvas.width, UVCanvas.height)
+
+        }
+        //document.body.appendChild(UVCanvas)
+        const imageData = ctx.getImageData(0,0,UVCanvas.width,UVCanvas.height)
         UVmap = imageData.data
-        
-
         setup()
+    };
 
-        
-    })
-}
+    }
 
 
 
