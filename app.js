@@ -4,10 +4,15 @@ import Stats from 'three/addons/libs/stats.module.js'
 
 // to add:
 // moving (should only need to update (height+width) # of noise values, not too intensive. do NOT refresh the whole array, push and pop.)
-// island bias? (make the borders water)
+// ~~island bias? (make the borders water)~~ done in v3
 // climate? (poles are colder, mountaintops are colder)
 // tree placement? use higher frequency noise mixed with the moisture map
 
+
+// LIVE CUSTOMIZATION
+// // there are customizible variables EVERYWHERE.
+// // lenx, noiseLevel, edgeClearence, islandBiasMix, just to name a few
+// // itd be cool to be able to change them from the webpage.
 
 
 
@@ -15,6 +20,10 @@ import Stats from 'three/addons/libs/stats.module.js'
 //globals
 let stats, controls, renderer, camera, scene
 var UVmap;
+
+window.discrete = true
+// true is discrete biomes
+// false is smooth/gradient biomes
 
 function setup() {
    
@@ -79,65 +88,12 @@ camera.position.y = 35
 
 createAndDrawPlane()
 
-// heightMap = new Array(lenx*leny)
-// moistMap = new Array(lenx*leny)
-// fillHeightWithNoise()
-// fillMoistureWithNoise()
-
-// const pw = gridW
-// const ph = gridH
-// const wsegs = lenx-1 // I FUCKING FIXED IT I LOOKED FOR LIKE A WHOLE DAY
-// const hsegs = leny-1 // AND IT WAS CUZ I DIDNT PUT -1 👹👹👹
-// const planeGeo = new THREE.PlaneGeometry(pw, ph, wsegs, hsegs);
-
-// // displace the vertices based on height data
-// const colors = []
-
-
-// planeGeo.attributes.position.count == lenx*leny // FALSE
-// for (let i = 0; i < planeGeo.attributes.position.count; i++) {
-   
-//     const vertex = new THREE.Vector3()
-//     vertex.fromBufferAttribute(planeGeo.attributes.position, i);
-    
-//     vertex.z = noiseLevel * heightMap[i]
-
-//     planeGeo.attributes.position.setXYZ(i, vertex.x, vertex.y, vertex.z);
-   
-//     //assign vertex color
-//     let waterBumpVal = 40 // what these do, is force the noise values into a wider range, 
-//     let peakBumpVal = 100 // so that even if the noise never hits 1, it still draws some peaks.
-//                         // turn window.debugClipping = true to see its work.
-//     let UVheight = Math.floor(interp(heightMap[i], 0, 1, 0-waterBumpVal, 100+peakBumpVal)) // 0-1 doesnt actaully hit 1 very often, meaning you dont get fun snowy mountain peaks.
-//     let UVmoist = Math.floor(interp(moistMap[i], 0, 1, 0, 100))
-//     let UVPixel = getPixel(100-UVmoist, 100-UVheight)
-//     let r = interp(UVPixel[0], 0,255,0,1)
-//     let g = interp(UVPixel[1], 0,255,0,1)
-//     let b = interp(UVPixel[2], 0,255,0,1)
-//     const color = new THREE.Color(r,g,b);
-//     colors.push(color.r, color.g, color.b)
-// }
-
-// planeGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors,3))
-
-// planeGeo.attributes.position.needsUpdate = true;
-// planeGeo.computeVertexNormals()
-
-// const planeMat = new THREE.MeshLambertMaterial({
-//     vertexColors: true,
-//     side: THREE.DoubleSide // renders both sides, could avoid for more performance
-// })
-//  window.wholeMap = new THREE.Mesh(planeGeo, planeMat)
-
-// wholeMap.rotation.x = -Math.PI /2
-
-// scene.add(wholeMap)
-
 createNoiseCanvases()
 
 
-// draw water level
-// since three.js is actually competent, i can make this water way cooler later
+// draw water level (ONLY HAPPENS IN THIS SETUP FUNCTION)
+
+// since three.js is actually competent(COUGH P5JS), i can make this water way cooler later
 const waterGeo = new THREE.PlaneGeometry(gridW, gridH, 1,1)
 const waterMat = new THREE.MeshLambertMaterial({
     color: 0x0000ff,
@@ -171,7 +127,8 @@ function fillHeightWithNoise(){
     let strength2 = 0.50
     let strength3 = 0.25
     let strength4 = 0.12
-
+    
+    
     for (let x = 0; x < lenx; x++) {
         for (let y = 0; y < leny; y++) {
         let e = strength1 * (noise.simplex2(x * noiseScale, y * noiseScale)+1)/2 +
@@ -182,6 +139,17 @@ function fillHeightWithNoise(){
                 strength4/8 * (noise.simplex2(x * 32*noiseScale, y * 32*noiseScale)+1)/2;
           e = (e / (strength1 + strength2 + strength3 + strength4));
           e = Math.pow(e, noiseCurve)
+          // this is v3 hopefully, and im incorporating the Euclidian Sqaure method of islanding
+          let mix = 0.5 // value for how much to emphasise the island bias. 0 is original, 1 is max.
+          let edgeClearance = 1.37 // 1 is regular, higher gives more water around edges
+          let nx = (2*edgeClearance)*x/(lenx)- edgeClearance
+          let ny = (2*edgeClearance)*y/(leny)-edgeClearance
+          //Euclidean Squared
+          let d = Math.min(1, ((nx)**2 + (ny)**2)/(2**0.5), )
+          // Square Bump
+          // let d = 1 - (1 - (nx)**2 * (ny)**2)
+          e = lerp(e, 1-d, mix)
+
           heightMap[x + y * lenx] = e
           }
       }
@@ -216,6 +184,10 @@ function loop() {
 function interp(val, min, max, newMin, newMax){
     return ( (val - min)/ (max - min) ) * (newMax - newMin) + newMin
   }
+
+  function lerp( a, b, alpha ) {
+    return a + alpha * ( b - a )
+}
 
 function getPixel(x,y){
     let idxR = 0
@@ -322,16 +294,16 @@ function createNoiseCanvases() {
             // create canvas 1
         const canv1 = document.createElement('canvas');
         canv1.id = "height"
-        canv1.width = 180
-        canv1.height = 180
+        canv1.width = 200
+        canv1.height = 200
         document.body.appendChild(canv1)
         const ctx1 = canv1.getContext('2d');
 
         // create canvas 2
         const canv2 = document.createElement('canvas');
         canv2.id = "moist"
-        canv2.width = 180
-        canv2.height = 180
+        canv2.width = 200
+        canv2.height = 200
         document.body.appendChild(canv2)
         const ctx2 = canv2.getContext('2d');
 
@@ -432,7 +404,10 @@ function loadImage(){
     const loader = new THREE.TextureLoader() 
     // biomeDiscrete.png for discrete biomes
     // biome.png for smooth/gradient biomes
-    loader.load('biomeDiscrete.png', function(texture){
+    let file
+    if (window.discrete) {file = "biomeDiscrete.png"}
+    else {file = "biome.png"}
+    loader.load(file, function(texture){
         const image = texture.image;
         const canvas = document.createElement('canvas')
         canvas.width = image.width
