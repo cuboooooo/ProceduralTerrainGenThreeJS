@@ -10,7 +10,7 @@ import Stats from 'three/addons/libs/stats.module.js'
 // // make it so that when you scale down the resolution, it still looks good. scale down to 200 to see what i mean.
 // // // (mostly has to do with noiseScale, islandBias, and noiseCurve)
 
-// // create many different CSS UV maps to choose from
+// // Create many different CSS UV maps to choose from
 // // // strictly elevation, strictly humidity, etc.
 // // // like try turning the discrete one into a smooth by blurring it
 
